@@ -39,8 +39,8 @@ MONGO_URI = os.getenv('MONGO_URI', "mongodb+srv://tigerbundle282:tTaRXh353IOL9mj
 # Initialize MongoDB
 client = MongoClient(
     MONGO_URI,
-    maxPoolSize=10,
-    connectTimeoutMS=3000,
+    maxPoolSize=50,
+    connectTimeoutMS=30000,
     retryWrites=True
 )
 db = client["telegram_bot"]
