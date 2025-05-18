@@ -15,7 +15,7 @@ MONGO_URI = "mongodb+srv://tigerbundle282:tTaRXh353IOL9mj2@testcookies.2elxf.mon
 
 client = MongoClient(
     MONGO_URI,
-    maxPoolSize=10,  # Optimize for concurrent connections
+    maxPoolSize=50,  # Optimize for concurrent connections
     connectTimeoutMS=30000,
     retryWrites=True,
     waitQueueTimeoutMS=1000,
@@ -40,7 +40,7 @@ def setup_indexes():
         logger.error(f"Error creating indexes: {e}")
 
 # Cache decorator with TTL
-def ttl_cache(maxsize=128, ttl=300):
+def ttl_cache(maxsize=128, ttl=600):
     def decorator(func):
         cache = {}
         
