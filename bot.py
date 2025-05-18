@@ -47,8 +47,8 @@ db = client["telegram_bot"]
 quizzes_sent_collection = db["quizzes_sent"]
 
 # Cache configurations
-user_cache = TTLCache(maxsize=1000, ttl=300)
-chat_cache = TTLCache(maxsize=1000, ttl=300)
+user_cache = TTLCache(maxsize=2000, ttl=600)
+chat_cache = TTLCache(maxsize=2000, ttl=600)
 
 # Rate limiting
 RATE_LIMIT = 5
