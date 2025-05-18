@@ -15,11 +15,11 @@ MONGO_URI = "mongodb+srv://tigerbundle282:tTaRXh353IOL9mj2@testcookies.2elxf.mon
 
 client = MongoClient(
     MONGO_URI,
-    maxPoolSize=100,  # Optimize for concurrent connections
+    maxPoolSize=10,  # Optimize for concurrent connections
     connectTimeoutMS=30000,
     retryWrites=True,
-    waitQueueTimeoutMS=10000,
-    serverSelectionTimeoutMS=30000
+    waitQueueTimeoutMS=1000,
+    serverSelectionTimeoutMS=3000
 )
 
 db = client["telegram_bot"]
