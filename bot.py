@@ -721,11 +721,11 @@ def main():
     updater = Updater(
         bot=bot,
         use_context=True,
-        workers=2,
+        workers=4,
         request_kwargs={
             'read_timeout': 10,
             'connect_timeout': 10,
-            'connect_pool_size': 1,  # Match this with workers count
+            'connect_pool_size': 4,  # Match this with workers count
             'connect_retries': 3,
             'pool_timeout': 30
         }
