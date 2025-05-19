@@ -47,8 +47,8 @@ db = client["telegram_bot"]
 quizzes_sent_collection = db["quizzes_sent"]
 
 # Cache configurations
-user_cache = TTLCache(maxsize=2000, ttl=600)
-chat_cache = TTLCache(maxsize=2000, ttl=600)
+user_cache = TTLCache(maxsize=5000, ttl=600)
+chat_cache = TTLCache(maxsize=5000, ttl=600)
 
 # Rate limiting
 RATE_LIMIT = 5
@@ -721,11 +721,11 @@ def main():
     updater = Updater(
         bot=bot,
         use_context=True,
-        workers=4,
+        workers=10,
         request_kwargs={
             'read_timeout': 10,
             'connect_timeout': 10,
-            'connect_pool_size': 4,  # Match this with workers count
+            'connect_pool_size': 50,  # Match this with workers count
             'connect_retries': 3,
             'pool_timeout': 30
         }
