@@ -6,9 +6,10 @@ from leaderboard_handler import add_score, update_user_stats
 import random
 import json
 import os
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING
 from datetime import datetime
-from telegram.error import BadRequest, TimedOut, NetworkError, RetryAfter 
+from telegram.error import BadRequest, TimedOut, NetworkError, RetryAfter
+from pymongo.errors import OperationFailure
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,50 @@ quizzes_sent_collection = db["quizzes_sent"]
 used_quizzesss_collection = db["used_quizzesssss"]
 message_status_collection = db["message_status"]
 
-# Add indexes for better performance
-quizzes_sent_collection.create_index([("chat_id", 1), ("date", 1)])
-used_quizzesss_collection.create_index([("chat_id", 1)])
-message_status_collection.create_index([("chat_id", 1), ("date", 1)])
+# Safely create indexes
+def ensure_indexes():
+    """
+    Safely create indexes, handling cases where they might already exist
+    """
+    try:
+        quizzes_sent_collection.create_index([("chat_id", ASCENDING), ("date", ASCENDING)], 
+                                           name="quiz_sent_chatid_date_idx")
+    except OperationFailure as e:
+        logger.info(f"Index already exists for quizzes_sent_collection: {str(e)}")
 
+    try:
+        used_quizzesss_collection.create_index([("chat_id", ASCENDING)],
+                                             name="used_quiz_chatid_idx")
+    except OperationFailure as e:
+        logger.info(f"Index already exists for used_quizzesss_collection: {str(e)}")
+
+    try:
+        message_status_collection.create_index([("chat_id", ASCENDING), ("date", ASCENDING)],
+                                            name="message_status_chatid_date_idx")
+    except OperationFailure as e:
+        logger.info(f"Index already exists for message_status_collection: {str(e)}")
+
+# Create indexes safely
+ensure_indexes()
+
+def get_daily_quiz_limit(chat_type):
+    """
+    Adjusted limits for better scalability
+    """
+    if chat_type == 'private':
+        return 30  # Reduced from 50 for better scalability
+    else:
+        return 50  # Reduced from 100 for better scalability
+
+def batch_get_chat_data(chat_id, today):
+    """
+    Batch fetch chat data to reduce database calls
+    """
+    return {
+        'quizzes_sent': quizzes_sent_collection.find_one({"chat_id": chat_id, "date": today}),
+        'message_status': message_status_collection.find_one({"chat_id": chat_id, "date": today}),
+        'used_questions': used_quizzesss_collection.find_one({"chat_id": chat_id})
+    }
 
 def retry_on_failure(func):
     """Decorator to retry function on transient errors"""
@@ -43,6 +83,7 @@ def retry_on_failure(func):
     return wrapper
 
 def load_quizzes(category):
+    """Load quizzes from file"""
     file_path = os.path.join('quizzes', f'{category}.json')
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
@@ -50,28 +91,6 @@ def load_quizzes(category):
     else:
         logger.error(f"Quiz file for category '{category}' not found.")
         return []
-
-
-def get_daily_quiz_limit(chat_type):
-    """
-    Set daily quiz limit based on chat type.
-    :param chat_type: Type of chat ('private', 'group', or 'supergroup').
-    :return: Daily quiz limit.
-    """
-    if chat_type == 'private':
-        return 50  # Daily limit for private chats
-    else:
-        return 100 # Daily limit for groups/supergroups
-        
-def batch_get_chat_data(chat_id, today):
-    """
-    Batch fetch chat data to reduce database calls
-    """
-    return {
-        'quizzes_sent': quizzes_sent_collection.find_one({"chat_id": chat_id, "date": today}),
-        'message_status': message_status_collection.find_one({"chat_id": chat_id, "date": today}),
-        'used_questions': used_quizzesss_collection.find_one({"chat_id": chat_id})
-    }
 
 def send_quiz_logic(context: CallbackContext, chat_id: str):
     """
@@ -82,8 +101,12 @@ def send_quiz_logic(context: CallbackContext, chat_id: str):
     questions = load_quizzes(category)
 
     # Get chat type and daily quiz limit
-    chat_type = context.bot.get_chat(chat_id).type
-    logger.info(f"Chat ID: {chat_id} | Chat Type: {chat_type}")
+    try:
+        chat_type = context.bot.get_chat(chat_id).type
+        logger.info(f"Chat ID: {chat_id} | Chat Type: {chat_type}")
+    except Exception as e:
+        logger.error(f"Failed to get chat type for {chat_id}: {e}")
+        return
 
     today = datetime.now().date().isoformat()
     
@@ -98,34 +121,27 @@ def send_quiz_logic(context: CallbackContext, chat_id: str):
     # Initialize if no data exists
     if not quizzes_sent:
         quizzes_sent = {"chat_id": chat_id, "date": today, "count": 0}
-        quizzes_sent_collection.insert_one(quizzes_sent)
+        try:
+            quizzes_sent_collection.insert_one(quizzes_sent)
+        except Exception as e:
+            logger.error(f"Failed to initialize quizzes_sent for {chat_id}: {e}")
+            return
 
     # Check daily limit
-    if quizzes_sent["count"] >= daily_limit:
+    if quizzes_sent.get("count", 0) >= daily_limit:
         if not message_status or not message_status.get("limit_reached", False):
-            context.bot.send_message(
-                chat_id=chat_id,
-                text=f"Your daily '{chat_type}': {daily_limit} limit is reached. You will get quizzes tomorrow."
-            )
-            message_status_collection.update_one(
-                {"chat_id": chat_id, "date": today},
-                {"$set": {"limit_reached": True}},
-                upsert=True
-            )
-        return
-
-    # Check available questions
-    if not questions:
-        if not message_status or not message_status.get("no_questions", False):
-            context.bot.send_message(
-                chat_id=chat_id,
-                text="No questions available for this category. /start choose other category"
-            )
-            message_status_collection.update_one(
-                {"chat_id": chat_id, "date": today},
-                {"$set": {"no_questions": True}},
-                upsert=True
-            )
+            try:
+                context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"Your daily '{chat_type}': {daily_limit} limit is reached. You will get quizzes tomorrow."
+                )
+                message_status_collection.update_one(
+                    {"chat_id": chat_id, "date": today},
+                    {"$set": {"limit_reached": True}},
+                    upsert=True
+                )
+            except Exception as e:
+                logger.error(f"Failed to send limit message to {chat_id}: {e}")
         return
 
     # Process used questions
@@ -133,51 +149,56 @@ def send_quiz_logic(context: CallbackContext, chat_id: str):
     available_questions = [q for q in questions if q not in used_ids]
     
     if not available_questions:
-        used_quizzesss_collection.update_one(
-            {"chat_id": chat_id},
-            {"$set": {"used_questions": []}},
-            upsert=True
-        )
-        available_questions = questions
-        context.bot.send_message(
-            chat_id=chat_id,
-            text="All quizzes have been used. Restarting with all available quizzes."
-        )
+        try:
+            used_quizzesss_collection.update_one(
+                {"chat_id": chat_id},
+                {"$set": {"used_questions": []}},
+                upsert=True
+            )
+            available_questions = questions
+            context.bot.send_message(
+                chat_id=chat_id,
+                text="All quizzes have been used. Restarting with all available quizzes."
+            )
+        except Exception as e:
+            logger.error(f"Failed to reset used questions for {chat_id}: {e}")
+            return
 
     # Send quiz
-    question = random.choice(available_questions)
-    try:
-        message = context.bot.send_poll(
-            chat_id=chat_id,
-            question=question['question'],
-            options=question['options'],
-            type='quiz',
-            correct_option_id=question['correct_option_id'],
-            is_anonymous=False
-        )
-        
-        # Batch update database
-        quizzes_sent_collection.update_one(
-            {"chat_id": chat_id, "date": today},
-            {"$inc": {"count": 1}},
-            upsert=True
-        )
-        
-        used_quizzesss_collection.update_one(
-            {"chat_id": chat_id},
-            {"$push": {"used_questions": question}},
-            upsert=True
-        )
-        
-        context.bot_data[message.poll.id] = {
-            'chat_id': chat_id,
-            'correct_option_id': question['correct_option_id']
-        }
-        
-    except BadRequest as e:
-        logger.error(f"Failed to send quiz to chat {chat_id}: {e}")
-        raise
-        
+    if available_questions:
+        question = random.choice(available_questions)
+        try:
+            message = context.bot.send_poll(
+                chat_id=chat_id,
+                question=question['question'],
+                options=question['options'],
+                type='quiz',
+                correct_option_id=question['correct_option_id'],
+                is_anonymous=False
+            )
+            
+            # Batch update database
+            quizzes_sent_collection.update_one(
+                {"chat_id": chat_id, "date": today},
+                {"$inc": {"count": 1}},
+                upsert=True
+            )
+            
+            used_quizzesss_collection.update_one(
+                {"chat_id": chat_id},
+                {"$push": {"used_questions": question}},
+                upsert=True
+            )
+            
+            context.bot_data[message.poll.id] = {
+                'chat_id': chat_id,
+                'correct_option_id': question['correct_option_id']
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to send quiz to chat {chat_id}: {e}")
+            raise
+
 @retry_on_failure
 def send_quiz(context: CallbackContext):
     """
@@ -192,8 +213,6 @@ def send_quiz_immediately(context: CallbackContext, chat_id: str):
     Send a quiz immediately to the specified chat.
     """
     send_quiz_logic(context, chat_id)
-
-
 
 def handle_poll_answer(update: Update, context: CallbackContext):
     """Handle user answers to quiz questions"""
@@ -212,4 +231,3 @@ def handle_poll_answer(update: Update, context: CallbackContext):
 
     # Update user statistics
     update_user_stats(user_id, is_correct)
-
