@@ -453,7 +453,52 @@ def setup_queue_processor(job_queue):
     job_queue.run_repeating(process_quiz_queue, interval=5, first=1)
     logger.info("Queue processor setup complete")
 
+
+# Ensure MongoDB indexes
+try:
+    active_chats_collection.create_index([("chat_id", ASCENDING)], unique=True)
+    active_chats_collection.create_index([("active", ASCENDING)])
+    active_chats_collection.create_index([("last_quiz_time", ASCENDING)])
+except Exception as e:
+    logger.warning(f"Index creation warning: {e}")
+
+def get_active_chats():
+    """Get all active chats from MongoDB"""
+    try:
+        active_chats = list(active_chats_collection.find({"active": True}))
+        logger.info(f"Found {len(active_chats)} active chats")
+        return active_chats
+    except Exception as e:
+        logger.error(f"Error getting active chats: {e}")
+        return []
+
+def update_chat_status(chat_id, active=True, interval=30, last_quiz_time=None):
+    """Update chat status in MongoDB"""
+    try:
+        update_data = {
+            "chat_id": chat_id,
+            "active": active,
+            "interval": interval,
+            "last_updated": datetime.utcnow()
+        }
+        if last_quiz_time:
+            update_data["last_quiz_time"] = last_quiz_time
+
+        active_chats_collection.update_one(
+            {"chat_id": chat_id},
+            {"$set": update_data},
+            upsert=True
+        )
+        logger.info(f"Updated chat {chat_id} status: active={active}, interval={interval}")
+    except Exception as e:
+        logger.error(f"Error updating chat status for {chat_id}: {e}")
+
+def format_time(dt):
+    """Format datetime in UTC"""
+    return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+
 def start_quiz(update: Update, context: CallbackContext):
+    """Start a quiz in a chat"""
     chat_id = str(update.effective_chat.id)
     chat_data = load_chat_data(chat_id)
 
@@ -465,75 +510,158 @@ def start_quiz(update: Update, context: CallbackContext):
     chat_data["active"] = True
     save_chat_data(chat_id, chat_data)
 
-    update.message.reply_text(f"Quiz started! Interval: {interval} seconds.")
+    current_time = datetime.utcnow()
+    next_quiz_time = current_time + timedelta(seconds=interval)
+
+    # Update MongoDB with current status
+    update_chat_status(chat_id, active=True, interval=interval, last_quiz_time=current_time)
+
+    # Send startup message with timing details
+    update.message.reply_text(
+        f"✅ Quiz started successfully!\n"
+        f"⏱️ Interval: {interval} seconds\n"
+        f"🕒 Current time: {format_time(current_time)}\n"
+        f"⏳ Next quiz at: {format_time(next_quiz_time)}"
+    )
 
     # Send first quiz immediately
     send_quiz_immediately(context, chat_id)
 
-    # Add to queue instead of creating individual jobs
-    quiz_queue.add_chat(chat_id, interval)
+    # Add to queue with proper timing
+    quiz_queue.add_chat(chat_id, interval, current_time)
 
 def stop_quiz(update: Update, context: CallbackContext):
+    """Stop an active quiz"""
     chat_id = str(update.effective_chat.id)
     chat_data = load_chat_data(chat_id)
 
-    if chat_data:
-        chat_data["active"] = False
-        save_chat_data(chat_id, chat_data)
-        # Remove from queue when stopping
-        quiz_queue.remove_chat(chat_id)
-        update.message.reply_text("Quiz stopped successfully.")
-    else:
+    if not chat_data.get("active", False):
         update.message.reply_text("No active quiz to stop.")
+        return
+
+    chat_data["active"] = False
+    save_chat_data(chat_id, chat_data)
+
+    # Update MongoDB and remove from queue
+    update_chat_status(chat_id, active=False)
+    quiz_queue.remove_chat(chat_id)
+
+    stop_time = datetime.utcnow()
+    update.message.reply_text(
+        f"✅ Quiz stopped successfully\n"
+        f"🕒 Stop time: {format_time(stop_time)}"
+    )
 
 def set_interval(update: Update, context: CallbackContext):
+    """Set quiz interval for a chat"""
     chat_id = str(update.effective_chat.id)
 
     if not context.args or not context.args[0].isdigit():
-        update.message.reply_text("Usage: /setinterval <seconds>")
+        update.message.reply_text("Usage: /setinterval <seconds> (minimum 10 seconds)")
         return
-    
+
     interval = int(context.args[0])
     if interval < 10:
-        update.message.reply_text("Interval must be at least 10 seconds.")
+        update.message.reply_text("⚠️ Interval must be at least 10 seconds.")
         return
 
     chat_data = load_chat_data(chat_id)
+    old_interval = chat_data.get("interval", 30)
     chat_data["interval"] = interval
     save_chat_data(chat_id, chat_data)
 
+    current_time = datetime.utcnow()
+    next_quiz_time = current_time + timedelta(seconds=interval)
+
+    # Update MongoDB
+    update_chat_status(chat_id, 
+                      active=chat_data.get("active", False), 
+                      interval=interval, 
+                      last_quiz_time=current_time)
+
     if chat_data.get("active", False):
-        # Remove from queue and re-add with new interval
-        quiz_queue.remove_chat(chat_id)
-        quiz_queue.add_chat(chat_id, interval)
-        update.message.reply_text(f"Quiz interval updated to {interval} seconds. Changes will take effect immediately.")
+        # Update queue with new interval
+        quiz_queue.update_interval(chat_id, interval)
+        update.message.reply_text(
+            f"✅ Quiz interval updated!\n"
+            f"⏱️ Old interval: {old_interval} seconds\n"
+            f"⏱️ New interval: {interval} seconds\n"
+            f"🕒 Current time: {format_time(current_time)}\n"
+            f"⏳ Next quiz at: {format_time(next_quiz_time)}"
+        )
     else:
-        update.message.reply_text(f"Quiz interval updated to {interval} seconds.")
+        update.message.reply_text(
+            f"✅ Quiz interval updated to {interval} seconds\n"
+            f"ℹ️ Start quiz with /start command"
+        )
 
-def error_handler(update: Update, context: CallbackContext):
-    """Log Errors caused by Updates."""
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
+async def fast_restart_active_quizzes(context: CallbackContext):
+    """Quickly restore all active quizzes after bot restart"""
+    active_chats = get_active_chats()
+    restored_count = 0
+    failed_count = 0
+    skipped_count = 0
 
-def restart_active_quizzes(context: CallbackContext):
-    """
-    Restart active quizzes after bot restart
-    """
-    active_chats = []  # You'll need to implement a way to get active chats from your storage
+    current_time = datetime.utcnow()
+    logger.info(f"Starting fast restart at {format_time(current_time)} for {len(active_chats)} chats...")
+
     for chat in active_chats:
         chat_id = chat["chat_id"]
-        chat_data = load_chat_data(chat_id)
-        interval = chat_data.get("interval", 30)
-        
+        interval = chat.get("interval", 30)
+        last_quiz_time = chat.get("last_quiz_time")
+
         try:
-            # Verify bot's access to the chat
-            context.bot.get_chat_member(chat_id, context.bot.id)
-            # Add to queue if accessible
-            quiz_queue.add_chat(chat_id, interval)
-            logger.info(f"Restarted quiz for chat {chat_id}")
+            # Verify bot's access to chat
+            await context.bot.get_chat_member(chat_id, context.bot.id)
+
+            # Calculate time since last quiz
+            if last_quiz_time:
+                time_since_last = (current_time - last_quiz_time).total_seconds()
+                # Skip if last quiz was too recent (within 5 seconds)
+                if time_since_last < 5:
+                    skipped_count += 1
+                    logger.info(f"Skipping chat {chat_id} - too recent: {time_since_last}s ago")
+                    continue
+
+            # Add to queue with proper timing
+            quiz_queue.add_chat(chat_id, interval, last_quiz_time)
+            restored_count += 1
+
+            if restored_count % 100 == 0:
+                logger.info(f"Restored {restored_count} chats...")
+
+        except TelegramError as e:
+            logger.warning(f"Bot removed from chat {chat_id}, deactivating: {e}")
+            update_chat_status(chat_id, active=False)
+            failed_count += 1
         except Exception as e:
-            logger.error(f"Failed to restart quiz for chat {chat_id}: {e}")
-            chat_data["active"] = False
-            save_chat_data(chat_id, chat_data)
+            logger.error(f"Error restoring chat {chat_id}: {e}")
+            failed_count += 1
+
+    completion_time = datetime.utcnow()
+    logger.info(
+        f"Fast restart completed at {format_time(completion_time)}:\n"
+        f"✅ Restored: {restored_count}\n"
+        f"⏭️ Skipped: {skipped_count}\n"
+        f"❌ Failed: {failed_count}"
+    )
+
+    # Notify admin if configured
+    admin_id = os.getenv('ADMIN_ID')
+    if admin_id:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=(
+                    f"🤖 Bot Restart Status:\n"
+                    f"✅ Restored: {restored_count} chats\n"
+                    f"⏭️ Skipped: {skipped_count} chats\n"
+                    f"❌ Failed: {failed_count} chats\n"
+                    f"🕒 Completed: {format_time(completion_time)}"
+                )
+            )
+        except Exception as e:
+            logger.error(f"Failed to send admin notification: {e}")
 
 def stop_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
@@ -805,6 +933,12 @@ def main():
     updater.job_queue.run_repeating(remove_inactive_jobs, interval=600)  # Run every 1 hour
     logger.info("Restarting active quizzes...")
     # dp.job_queue.run_once(restart_active_quizzes, 1)
+    logger.info("Setting up queue processor...")
+    dp.job_queue.run_repeating(
+        lambda ctx: quiz_queue.process_queue(ctx),
+        interval=1,
+        first=1
+    )
 
     # Start the bot with optimized polling settings
     logger.info("Starting bot...")
@@ -814,6 +948,9 @@ def main():
         read_latency=0.1,
         allowed_updates=['message', 'callback_query', 'poll_answer']
     )
+    # Restore active quizzes
+    logger.info("Restoring active quizzes...")
+    dp.job_queue.run_once(fast_restart_active_quizzes, 1)
     logger.info("Bot started successfully!")
     updater.idle()
 
