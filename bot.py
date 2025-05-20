@@ -435,39 +435,23 @@ def button(update: Update, context: CallbackContext):
                                 reply_markup=reply_markup
                                 )
 
-
-def set_interval(update: Update, context: CallbackContext):
-    chat_id = str(update.effective_chat.id)
-
-    if not context.args or not context.args[0].isdigit():
-        update.message.reply_text("Usage: /setinterval <seconds>")
-        return
-    
-    interval = int(context.args[0])
-    if interval < 10:
-        update.message.reply_text("Interval must be at least 10 seconds.")
-        return
-
-    chat_data = load_chat_data(chat_id)
-    chat_data["interval"] = interval
-    save_chat_data(chat_id, chat_data)
-
-    # If quiz is already running, update the interval immediately
-    if chat_data.get("active", False):
-        update.message.reply_text(f"Quiz interval updated to {interval} seconds. Applying new interval immediately.")
-        jobs = context.job_queue.jobs()
-        for job in jobs:
-            if job.context and job.context["chat_id"] == chat_id:
-                job.schedule_removal()
-        # Send the first quiz immediately and then schedule subsequent quizzes
-        send_quiz_immediately(context, chat_id)
-        context.job_queue.run_repeating(send_quiz, interval=interval, first=interval, context={"chat_id": chat_id, "used_questions": chat_data.get("used_questions", [])})
-    else:
-        update.message.reply_text(f"Quiz interval updated to {interval} seconds.")
-        start_quiz(update, context)
-
 # Initialize the quiz queue
 quiz_queue = QuizQueue()
+
+def process_quiz_queue(context: CallbackContext):
+    """
+    Periodic job to process the quiz queue
+    """
+    quiz_queue.process_queue(context)
+
+def setup_queue_processor(job_queue):
+    """
+    Set up the queue processor job using the job_queue directly
+    """
+    # Process queue every 5 seconds
+    logger.info("Setting up queue processor")
+    job_queue.run_repeating(process_quiz_queue, interval=5, first=1)
+    logger.info("Queue processor setup complete")
 
 def start_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
@@ -489,38 +473,67 @@ def start_quiz(update: Update, context: CallbackContext):
     # Add to queue instead of creating individual jobs
     quiz_queue.add_chat(chat_id, interval)
 
-def process_quiz_queue(context: CallbackContext):
-    """
-    Periodic job to process the quiz queue
-    """
-    quiz_queue.process_queue(context)
+def stop_quiz(update: Update, context: CallbackContext):
+    chat_id = str(update.effective_chat.id)
+    chat_data = load_chat_data(chat_id)
 
-def setup_queue_processor(dispatcher):
-    """
-    Set up the queue processor job
-    """
-    job_queue = dispatcher.job_queue
-    # Process queue every 5 seconds
-    job_queue.run_repeating(process_quiz_queue, interval=5)
+    if chat_data:
+        chat_data["active"] = False
+        save_chat_data(chat_id, chat_data)
+        # Remove from queue when stopping
+        quiz_queue.remove_chat(chat_id)
+        update.message.reply_text("Quiz stopped successfully.")
+    else:
+        update.message.reply_text("No active quiz to stop.")
+
+def set_interval(update: Update, context: CallbackContext):
+    chat_id = str(update.effective_chat.id)
+
+    if not context.args or not context.args[0].isdigit():
+        update.message.reply_text("Usage: /setinterval <seconds>")
+        return
+    
+    interval = int(context.args[0])
+    if interval < 10:
+        update.message.reply_text("Interval must be at least 10 seconds.")
+        return
+
+    chat_data = load_chat_data(chat_id)
+    chat_data["interval"] = interval
+    save_chat_data(chat_id, chat_data)
+
+    if chat_data.get("active", False):
+        # Remove from queue and re-add with new interval
+        quiz_queue.remove_chat(chat_id)
+        quiz_queue.add_chat(chat_id, interval)
+        update.message.reply_text(f"Quiz interval updated to {interval} seconds. Changes will take effect immediately.")
+    else:
+        update.message.reply_text(f"Quiz interval updated to {interval} seconds.")
+
+def error_handler(update: Update, context: CallbackContext):
+    """Log Errors caused by Updates."""
+    logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 def restart_active_quizzes(context: CallbackContext):
     """
-    Modified to use queue system for restarts
+    Restart active quizzes after bot restart
     """
-    active_quizzes = get_active_quizzes()
-    for quiz in active_quizzes:
-        chat_id = quiz["chat_id"]
-        interval = quiz["data"].get("interval", 30)
-
+    active_chats = []  # You'll need to implement a way to get active chats from your storage
+    for chat in active_chats:
+        chat_id = chat["chat_id"]
+        chat_data = load_chat_data(chat_id)
+        interval = chat_data.get("interval", 30)
+        
         try:
             # Verify bot's access to the chat
             context.bot.get_chat_member(chat_id, context.bot.id)
             # Add to queue if accessible
             quiz_queue.add_chat(chat_id, interval)
-        except TelegramError:
-            logger.warning(f"Bot is no longer a member of chat {chat_id}. Removing from active quizzes.")
-            save_chat_data(chat_id, {"active": False})
-
+            logger.info(f"Restarted quiz for chat {chat_id}")
+        except Exception as e:
+            logger.error(f"Failed to restart quiz for chat {chat_id}: {e}")
+            chat_data["active"] = False
+            save_chat_data(chat_id, chat_data)
 
 def stop_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
@@ -785,10 +798,13 @@ def main():
 
     # Schedule periodic cleanup
     updater.job_queue.run_repeating(cleanup_job, interval=600)  # Run every hour
-    # updater.job_queue.run_once(restart_active_quizzes, 0)
+    dp.add_error_handler(error_handler)
+    logger.info("Setting up queue processor...")
     setup_queue_processor(updater.job_queue)
-    restart_active_quizzes(updater.dispatcher)
+    logger.info("Queue processor setup completed")
     updater.job_queue.run_repeating(remove_inactive_jobs, interval=600)  # Run every 1 hour
+    logger.info("Restarting active quizzes...")
+    dp.job_queue.run_once(restart_active_quizzes, 1)
 
     # Start the bot with optimized polling settings
     logger.info("Starting bot...")
