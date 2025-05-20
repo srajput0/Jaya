@@ -786,7 +786,7 @@ def main():
     # Schedule periodic cleanup
     updater.job_queue.run_repeating(cleanup_job, interval=600)  # Run every hour
     # updater.job_queue.run_once(restart_active_quizzes, 0)
-    setup_queue_processor(dispatcher)
+    setup_queue_processor(updater.job_queue)
     restart_active_quizzes(updater.dispatcher)
     updater.job_queue.run_repeating(remove_inactive_jobs, interval=600)  # Run every 1 hour
 
