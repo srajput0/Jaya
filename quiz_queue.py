@@ -1,9 +1,7 @@
 from collections import deque
 import time
 import logging
-from datetime import datetime
-from telegram.error import RetryAfter, TimedOut
-from chat_data_handler import load_chat_data
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -13,54 +11,77 @@ class QuizQueue:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(QuizQueue, cls).__new__(cls)
-            cls._instance.queue = deque()
+            cls._instance.queue = {}  # Changed to dict to track each chat separately
             cls._instance.processing = False
         return cls._instance
     
-    def add_chat(self, chat_id, interval):
-        """Add a chat to the queue with its next quiz time"""
-        self.queue.append({
+    def add_chat(self, chat_id, interval, last_quiz_time=None):
+        """
+        Add a chat to the queue with its specific interval and optional last quiz time
+        """
+        current_time = datetime.utcnow()
+        
+        if last_quiz_time:
+            # Calculate next quiz time based on last quiz time and interval
+            time_since_last = (current_time - last_quiz_time).total_seconds()
+            remaining_time = interval - (time_since_last % interval)
+            next_quiz_time = current_time + timedelta(seconds=remaining_time)
+        else:
+            next_quiz_time = current_time + timedelta(seconds=interval)
+            
+        self.queue[chat_id] = {
             'chat_id': chat_id,
-            'next_quiz_time': time.time() + interval
-        })
-        logger.info(f"Added chat {chat_id} to queue with interval {interval}")
+            'interval': interval,
+            'next_quiz_time': next_quiz_time,
+            'last_quiz_time': last_quiz_time or current_time
+        }
+        logger.info(f"Added chat {chat_id} to queue with {interval}s interval. Next quiz at {next_quiz_time}")
     
     def process_queue(self, context):
-        """Process queued chats and send quizzes"""
+        """Process queued chats and send quizzes based on individual intervals"""
         if self.processing:
             return
             
         self.processing = True
-        current_time = time.time()
-        processed_count = 0
+        current_time = datetime.utcnow()
+        processed_chats = []
         
         try:
-            while self.queue and self.queue[0]['next_quiz_time'] <= current_time:
-                if processed_count >= 100:  # Process max 100 chats per batch
-                    break
-                    
-                chat = self.queue.popleft()
-                try:
-                    self.send_quiz_with_rate_limit(context, chat['chat_id'])
-                    processed_count += 1
-                    
-                    # Re-add to queue if still active
-                    chat_data = load_chat_data(chat['chat_id'])
-                    if chat_data.get('active', False):
-                        chat['next_quiz_time'] = time.time() + chat_data.get('interval', 30)
-                        self.queue.append(chat)
+            # Check each chat in the queue
+            for chat_id, chat_data in list(self.queue.items()):
+                if current_time >= chat_data['next_quiz_time']:
+                    try:
+                        from quiz_handler import send_quiz_logic
+                        send_quiz_logic(context, chat_id)
                         
-                except Exception as e:
-                    logger.error(f"Failed to process chat {chat['chat_id']}: {e}")
-                    # Re-add with delay if temporary error
-                    if isinstance(e, (RetryAfter, TimedOut)):
-                        chat['next_quiz_time'] = time.time() + 60  # 1-minute delay
-                        self.queue.append(chat)
-        
+                        # Update last quiz time and calculate next quiz exactly
+                        last_time = chat_data['next_quiz_time']  # Use scheduled time instead of current time
+                        interval = chat_data['interval']
+                        
+                        # Calculate next quiz time based on the scheduled time
+                        self.queue[chat_id]['last_quiz_time'] = last_time
+                        self.queue[chat_id]['next_quiz_time'] = last_time + timedelta(seconds=interval)
+                        
+                        processed_chats.append(chat_id)
+                        logger.info(f"Sent quiz to chat {chat_id}. Next quiz at {self.queue[chat_id]['next_quiz_time']}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to send quiz to chat {chat_id}: {e}")
+                        if "bot is not a member" in str(e).lower():
+                            self.remove_chat(chat_id)
+                            logger.warning(f"Removed chat {chat_id} from queue due to bot removal")
+                
+            if processed_chats:
+                logger.info(f"Processed {len(processed_chats)} chats in queue")
+                
         finally:
             self.processing = False
-            if processed_count > 0:
-                logger.info(f"Processed {processed_count} chats from queue")
+
+    def remove_chat(self, chat_id):
+        """Remove a chat from the queue"""
+        if chat_id in self.queue:
+            del self.queue[chat_id]
+            logger.info(f"Removed chat {chat_id} from queue")
     
     def send_quiz_with_rate_limit(self, context, chat_id):
         """Send quiz with rate limiting and error handling"""
