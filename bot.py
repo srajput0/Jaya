@@ -39,7 +39,7 @@ MONGO_URI = os.getenv('MONGO_URI', "mongodb+srv://tigerbundle282:tTaRXh353IOL9mj
 # Initialize MongoDB
 client = MongoClient(
     MONGO_URI,
-    maxPoolSize=50,
+    maxPoolSize=200,
     connectTimeoutMS=30000,
     retryWrites=True
 )
@@ -47,8 +47,8 @@ db = client["telegram_bot"]
 quizzes_sent_collection = db["quizzes_sent"]
 
 # Cache configurations
-user_cache = TTLCache(maxsize=5000, ttl=600)
-chat_cache = TTLCache(maxsize=5000, ttl=600)
+user_cache = TTLCache(maxsize=10000, ttl=600)
+chat_cache = TTLCache(maxsize=10000, ttl=600)
 
 # Rate limiting
 RATE_LIMIT = 5
@@ -725,7 +725,7 @@ def main():
         request_kwargs={
             'read_timeout': 10,
             'connect_timeout': 10,
-            'connect_pool_size': 100,  # Match this with workers count
+            'connect_pool_size': 200,  # Match this with workers count
             'connect_retries': 3,
             'pool_timeout': 30
         }
