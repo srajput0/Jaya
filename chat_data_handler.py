@@ -15,7 +15,7 @@ MONGO_URI = "mongodb+srv://tigerbundle282:tTaRXh353IOL9mj2@testcookies.2elxf.mon
 
 client = MongoClient(
     MONGO_URI,
-    maxPoolSize=50,  # Optimize for concurrent connections
+    maxPoolSize=200,  # Optimize for concurrent connections
     connectTimeoutMS=30000,
     retryWrites=True,
     waitQueueTimeoutMS=1000,
