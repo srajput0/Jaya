@@ -804,7 +804,7 @@ def main():
     logger.info("Queue processor setup completed")
     updater.job_queue.run_repeating(remove_inactive_jobs, interval=600)  # Run every 1 hour
     logger.info("Restarting active quizzes...")
-    dp.job_queue.run_once(restart_active_quizzes, 1)
+    # dp.job_queue.run_once(restart_active_quizzes, 1)
 
     # Start the bot with optimized polling settings
     logger.info("Starting bot...")
