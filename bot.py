@@ -26,6 +26,7 @@ from functools import wraps
 from cachetools import TTLCache, cached
 from typing import Optional, Dict, List, Any
 from bot_logging import logger
+from quiz_queue import QuizQueue
 
 
 
@@ -465,29 +466,61 @@ def set_interval(update: Update, context: CallbackContext):
         update.message.reply_text(f"Quiz interval updated to {interval} seconds.")
         start_quiz(update, context)
 
+# Initialize the quiz queue
+quiz_queue = QuizQueue()
 
 def start_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
     chat_data = load_chat_data(chat_id)
 
-    today = datetime.now().date().isoformat()  # Convert date to string
-    quizzes_sent = quizzes_sent_collection.find_one({"chat_id": chat_id, "date": today})
-
     if chat_data.get("active", False):
         update.message.reply_text("A quiz is already running in this chat!")
         return
 
-    interval = chat_data.get("interval", 30)  # Default interval to 30 seconds if not set
+    interval = chat_data.get("interval", 30)
     chat_data["active"] = True
     save_chat_data(chat_id, chat_data)
 
     update.message.reply_text(f"Quiz started! Interval: {interval} seconds.")
 
-    # Send the first quiz immediately
+    # Send first quiz immediately
     send_quiz_immediately(context, chat_id)
 
-    # Schedule subsequent quizzes at the specified interval
-    context.job_queue.run_repeating(send_quiz, interval=interval, first=interval, context={"chat_id": chat_id, "used_questions": []})
+    # Add to queue instead of creating individual jobs
+    quiz_queue.add_chat(chat_id, interval)
+
+def process_quiz_queue(context: CallbackContext):
+    """
+    Periodic job to process the quiz queue
+    """
+    quiz_queue.process_queue(context)
+
+def setup_queue_processor(dispatcher):
+    """
+    Set up the queue processor job
+    """
+    job_queue = dispatcher.job_queue
+    # Process queue every 5 seconds
+    job_queue.run_repeating(process_quiz_queue, interval=5)
+
+def restart_active_quizzes(context: CallbackContext):
+    """
+    Modified to use queue system for restarts
+    """
+    active_quizzes = get_active_quizzes()
+    for quiz in active_quizzes:
+        chat_id = quiz["chat_id"]
+        interval = quiz["data"].get("interval", 30)
+
+        try:
+            # Verify bot's access to the chat
+            context.bot.get_chat_member(chat_id, context.bot.id)
+            # Add to queue if accessible
+            quiz_queue.add_chat(chat_id, interval)
+        except TelegramError:
+            logger.warning(f"Bot is no longer a member of chat {chat_id}. Removing from active quizzes.")
+            save_chat_data(chat_id, {"active": False})
+
 
 def stop_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
@@ -540,28 +573,28 @@ def resume_quiz(update: Update, context: CallbackContext):
 
     update.message.reply_text("Quiz resumed successfully.")
     
-def restart_active_quizzes(context: CallbackContext):
-    active_quizzes = get_active_quizzes()
-    for quiz in active_quizzes:
-        chat_id = quiz["chat_id"]
-        interval = quiz["data"].get("interval", 30)
-        used_questions = quiz["data"].get("used_questions", [])
+# def restart_active_quizzes(context: CallbackContext):
+#     active_quizzes = get_active_quizzes()
+#     for quiz in active_quizzes:
+#         chat_id = quiz["chat_id"]
+#         interval = quiz["data"].get("interval", 30)
+#         used_questions = quiz["data"].get("used_questions", [])
 
-        # Check if bot is still a member of the chat
-        try:
-            context.bot.get_chat_member(chat_id, context.bot.id)
-        except TelegramError:
-            logger.warning(f"Bot is no longer a member of chat {chat_id}. Removing from active quizzes.")
-            save_chat_data(chat_id, {"active": False})  # Mark chat as inactive
-            continue
+#         # Check if bot is still a member of the chat
+#         try:
+#             context.bot.get_chat_member(chat_id, context.bot.id)
+#         except TelegramError:
+#             logger.warning(f"Bot is no longer a member of chat {chat_id}. Removing from active quizzes.")
+#             save_chat_data(chat_id, {"active": False})  # Mark chat as inactive
+#             continue
 
-        logger.info(f"Restarting quiz for chat_id: {chat_id} with interval {interval} seconds.")
-        context.job_queue.run_repeating(
-            send_quiz,
-            interval=interval,
-            first=0,
-            context={"chat_id": chat_id, "used_questions": used_questions}
-        )
+#         logger.info(f"Restarting quiz for chat_id: {chat_id} with interval {interval} seconds.")
+#         context.job_queue.run_repeating(
+#             send_quiz,
+#             interval=interval,
+#             first=0,
+#             context={"chat_id": chat_id, "used_questions": used_questions}
+#         )
     
 def check_stats(update: Update, context: CallbackContext):
     """Display user's quiz statistics"""
