@@ -721,7 +721,7 @@ def main():
     updater = Updater(
         bot=bot,
         use_context=True,
-        workers=4,
+        workers=20,
         request_kwargs={
             'read_timeout': 10,
             'connect_timeout': 10,
