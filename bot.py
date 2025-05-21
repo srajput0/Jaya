@@ -549,47 +549,101 @@ def stop_quiz(update: Update, context: CallbackContext):
         f"🕒 Stop time: {format_time(stop_time)}"
     )
 
+# def set_interval(update: Update, context: CallbackContext):
+#     """Set quiz interval for a chat"""
+#     chat_id = str(update.effective_chat.id)
+
+#     if not context.args or not context.args[0].isdigit():
+#         update.message.reply_text("Usage: /setinterval <seconds> (minimum 10 seconds)")
+#         return
+
+#     interval = int(context.args[0])
+#     if interval < 10:
+#         update.message.reply_text("⚠️ Interval must be at least 10 seconds.")
+#         return
+
+#     chat_data = load_chat_data(chat_id)
+#     old_interval = chat_data.get("interval", 30)
+#     chat_data["interval"] = interval
+#     save_chat_data(chat_id, chat_data)
+
+#     current_time = datetime.utcnow()
+#     next_quiz_time = current_time + timedelta(seconds=interval)
+
+#     # Update MongoDB
+#     update_chat_status(chat_id, 
+#                       active=chat_data.get("active", False), 
+#                       interval=interval, 
+#                       last_quiz_time=current_time)
+
+#     if chat_data.get("active", False):
+#         # Update queue with new interval
+#         quiz_queue.update_interval(chat_id, interval)
+#         update.message.reply_text(
+#             f"✅ Quiz interval updated!\n"
+#             f"⏱️ Old interval: {old_interval} seconds\n"
+#             f"⏱️ New interval: {interval} seconds\n"
+#             f"🕒 Current time: {format_time(current_time)}\n"
+#             f"⏳ Next quiz at: {format_time(next_quiz_time)}"
+#         )
+#     else:
+#         update.message.reply_text(
+#             f"✅ Quiz interval updated to {interval} seconds\n"
+#             f"ℹ️ Start quiz with /start command"
+#         )
+
 def set_interval(update: Update, context: CallbackContext):
-    """Set quiz interval for a chat"""
+    """Set quiz interval using command /setinterval <seconds>"""
     chat_id = str(update.effective_chat.id)
-
+    
+    # Check if command has an argument
     if not context.args or not context.args[0].isdigit():
-        update.message.reply_text("Usage: /setinterval <seconds> (minimum 10 seconds)")
+        update.message.reply_text("Usage: /setinterval <seconds>\nExample: /setinterval 30")
         return
-
+        
     interval = int(context.args[0])
+    
+    # Validate interval
     if interval < 10:
-        update.message.reply_text("⚠️ Interval must be at least 10 seconds.")
+        update.message.reply_text("⚠️ Interval must be at least 10 seconds!")
         return
-
+    
     chat_data = load_chat_data(chat_id)
-    old_interval = chat_data.get("interval", 30)
     chat_data["interval"] = interval
     save_chat_data(chat_id, chat_data)
-
-    current_time = datetime.utcnow()
-    next_quiz_time = current_time + timedelta(seconds=interval)
-
-    # Update MongoDB
-    update_chat_status(chat_id, 
-                      active=chat_data.get("active", False), 
-                      interval=interval, 
-                      last_quiz_time=current_time)
-
+    
     if chat_data.get("active", False):
-        # Update queue with new interval
-        quiz_queue.update_interval(chat_id, interval)
-        update.message.reply_text(
-            f"✅ Quiz interval updated!\n"
-            f"⏱️ Old interval: {old_interval} seconds\n"
-            f"⏱️ New interval: {interval} seconds\n"
-            f"🕒 Current time: {format_time(current_time)}\n"
-            f"⏳ Next quiz at: {format_time(next_quiz_time)}"
+        # Remove existing quiz jobs for this chat
+        jobs = context.job_queue.get_jobs_by_name(str(chat_id))
+        for job in jobs:
+            job.schedule_removal()
+            
+        # Send first quiz immediately
+        send_quiz_immediately(context, chat_id)
+        
+        # Schedule new repeating quiz with updated interval
+        context.job_queue.run_repeating(
+            send_quiz,
+            interval=interval,
+            first=interval,
+            context={
+                "chat_id": chat_id,
+                "used_questions": chat_data.get("used_questions", [])
+            },
+            name=str(chat_id)
         )
+        
+        update.message.reply_text(f"Quiz interval updated to {interval} seconds. Starting quiz.")
+        
+        # Update MongoDB status
+        update_chat_status(chat_id, active=True, interval=interval)
+        
+        # Update queue
+        quiz_queue.add_chat(chat_id, interval, datetime.utcnow())
     else:
         update.message.reply_text(
-            f"✅ Quiz interval updated to {interval} seconds\n"
-            f"ℹ️ Start quiz with /start command"
+            f"Quiz interval set to {interval} seconds.\n"
+            f"Use /start to begin the quiz."
         )
 def quick_restart_all_quizzes(context: CallbackContext):
     """
