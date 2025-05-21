@@ -645,68 +645,111 @@ def set_interval(update: Update, context: CallbackContext):
             f"Quiz interval set to {interval} seconds.\n"
             f"Use /start to begin the quiz."
         )
-def quick_restart_all_quizzes(context: CallbackContext):
-    """
-    Quickly send quizzes to all active chats immediately after restart
-    """
-    active_chats = get_active_chats()
-    sent_count = 0
-    failed_count = 0
+# def quick_restart_all_quizzes(context: CallbackContext):
+#     """
+#     Quickly send quizzes to all active chats immediately after restart
+#     """
+#     active_chats = get_active_chats()
+#     sent_count = 0
+#     failed_count = 0
     
-    logger.info(f"Quick restarting quizzes for {len(active_chats)} chats...")
+#     logger.info(f"Quick restarting quizzes for {len(active_chats)} chats...")
     
-    # Process chats in batches of 30 to avoid rate limiting
-    BATCH_SIZE = 30
-    for i in range(0, len(active_chats), BATCH_SIZE):
-        batch = active_chats[i:i + BATCH_SIZE]
+#     # Process chats in batches of 30 to avoid rate limiting
+#     BATCH_SIZE = 30
+#     for i in range(0, len(active_chats), BATCH_SIZE):
+#         batch = active_chats[i:i + BATCH_SIZE]
         
-        for chat in batch:
-            chat_id = chat["chat_id"]
-            interval = chat.get("interval", 30)
+#         for chat in batch:
+#             chat_id = chat["chat_id"]
+#             interval = chat.get("interval", 30)
             
-            try:
-                # Quick check if bot is in chat
-                context.bot.get_chat_member(chat_id, context.bot.id)
+#             try:
+#                 # Quick check if bot is in chat
+#                 context.bot.get_chat_member(chat_id, context.bot.id)
                 
-                # Send quiz immediately
-                from quiz_handler import send_quiz_logic
-                send_quiz_logic(context, chat_id)
+#                 # Send quiz immediately
+#                 from quiz_handler import send_quiz_logic
+#                 send_quiz_logic(context, chat_id)
                 
-                # Add to queue for future quizzes
-                quiz_queue.add_chat(chat_id, interval, datetime.utcnow())
+#                 # Add to queue for future quizzes
+#                 quiz_queue.add_chat(chat_id, interval, datetime.utcnow())
                 
-                sent_count += 1
-                if sent_count % 50 == 0:
-                    logger.info(f"Sent quizzes to {sent_count} chats...")
+#                 sent_count += 1
+#                 if sent_count % 50 == 0:
+#                     logger.info(f"Sent quizzes to {sent_count} chats...")
                 
-            except TelegramError as e:
-                logger.warning(f"Failed to send quiz to chat {chat_id}: {e}")
-                update_chat_status(chat_id, active=False)
-                failed_count += 1
-            except Exception as e:
-                logger.error(f"Error processing chat {chat_id}: {e}")
-                failed_count += 1
+#             except TelegramError as e:
+#                 logger.warning(f"Failed to send quiz to chat {chat_id}: {e}")
+#                 update_chat_status(chat_id, active=False)
+#                 failed_count += 1
+#             except Exception as e:
+#                 logger.error(f"Error processing chat {chat_id}: {e}")
+#                 failed_count += 1
         
-        # Small delay between batches to avoid rate limits
-        time.sleep(1)
+#         # Small delay between batches to avoid rate limits
+#         time.sleep(1)
 
-    logger.info(f"Quick restart completed: {sent_count} quizzes sent, {failed_count} failed")
+#     logger.info(f"Quick restart completed: {sent_count} quizzes sent, {failed_count} failed")
     
-    # Notify admin
-    admin_id = os.getenv('ADMIN_ID')
-    if admin_id:
-        try:
-            context.bot.send_message(
-                chat_id=admin_id,
-                text=(
-                    f"🤖 Bot Quick Restart Complete:\n"
-                    f"✅ Sent: {sent_count} quizzes\n"
-                    f"❌ Failed: {failed_count} chats\n"
-                    f"🕒 Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-                )
-            )
-        except Exception as e:
-            logger.error(f"Failed to send admin notification: {e}")
+#     # Notify admin
+#     admin_id = os.getenv('ADMIN_ID')
+#     if admin_id:
+#         try:
+#             context.bot.send_message(
+#                 chat_id=admin_id,
+#                 text=(
+#                     f"🤖 Bot Quick Restart Complete:\n"
+#                     f"✅ Sent: {sent_count} quizzes\n"
+#                     f"❌ Failed: {failed_count} chats\n"
+#                     f"🕒 Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+#                 )
+#             )
+#         except Exception as e:
+#             logger.error(f"Failed to send admin notification: {e}")
+
+def quick_restart_all_quizzes(context: CallbackContext):
+    """Immediately send quizzes to all active chats"""
+    try:
+        active_chats = get_active_chats()
+        sent_count = 0
+        failed_count = 0
+        
+        logger.info(f"Starting quick restart for {len(active_chats)} chats...")
+        
+        # Process in smaller batches
+        BATCH_SIZE = 15
+        for i in range(0, len(active_chats), BATCH_SIZE):
+            batch = active_chats[i:i + BATCH_SIZE]
+            
+            for chat in batch:
+                chat_id = str(chat["chat_id"])
+                interval = chat.get("interval", 30)
+                
+                try:
+                    # Direct quiz send
+                    send_quiz_immediately(context, chat_id)
+                    
+                    # Add to queue with current time
+                    quiz_queue.add_chat(chat_id, interval)
+                    
+                    sent_count += 1
+                    logger.info(f"Sent quiz to chat {chat_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to send quiz to {chat_id}: {e}")
+                    failed_count += 1
+                    
+                    if "bot is not a member" in str(e).lower():
+                        update_chat_status(chat_id, active=False)
+            
+            # Delay between batches
+            time.sleep(1.5)
+        
+        logger.info(f"Restart complete: {sent_count} sent, {failed_count} failed")
+        
+    except Exception as e:
+        logger.error(f"Error in quick restart: {e}")
 
 def stop_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
