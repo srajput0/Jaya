@@ -34,7 +34,7 @@ from quiz_queue import QuizQueue
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', "7183336129:AAGC7Cj0fXjMQzROUXMZHnb0pyXQQqneMic")
 ADMIN_ID = int(os.getenv('ADMIN_ID', "5050578106"))
 LOG_GROUP_ID = int(os.getenv('LOG_GROUP_ID', "-1001902619247"))
-MONGO_URI = os.getenv('MONGO_URI', "mongodb+srv://tigerbundle282:tTaRXh353IOL9mj2@testcookies.2elxf.mongodb.net/?retryWrites=true&w=majority&appName=Testcookies")
+MONGO_URI = os.getenv('MONGO_URI', "mongodb+srv://2004:2005@cluster0.6vdid.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 
 
 # Initialize MongoDB
