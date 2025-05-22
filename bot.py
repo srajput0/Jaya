@@ -708,48 +708,7 @@ def set_interval(update: Update, context: CallbackContext):
 #         except Exception as e:
 #             logger.error(f"Failed to send admin notification: {e}")
 
-def quick_restart_all_quizzes(context: CallbackContext):
-    """Immediately send quizzes to all active chats"""
-    try:
-        active_chats = get_active_chats()
-        sent_count = 0
-        failed_count = 0
-        
-        logger.info(f"Starting quick restart for {len(active_chats)} chats...")
-        
-        # Process in smaller batches
-        BATCH_SIZE = 15
-        for i in range(0, len(active_chats), BATCH_SIZE):
-            batch = active_chats[i:i + BATCH_SIZE]
-            
-            for chat in batch:
-                chat_id = str(chat["chat_id"])
-                interval = chat.get("interval", 30)
-                
-                try:
-                    # Direct quiz send
-                    send_quiz_immediately(context, chat_id)
-                    
-                    # Add to queue with current time
-                    quiz_queue.add_chat(chat_id, interval)
-                    
-                    sent_count += 1
-                    logger.info(f"Sent quiz to chat {chat_id}")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to send quiz to {chat_id}: {e}")
-                    failed_count += 1
-                    
-                    if "bot is not a member" in str(e).lower():
-                        update_chat_status(chat_id, active=False)
-            
-            # Delay between batches
-            time.sleep(1.5)
-        
-        logger.info(f"Restart complete: {sent_count} sent, {failed_count} failed")
-        
-    except Exception as e:
-        logger.error(f"Error in quick restart: {e}")
+
 
 def stop_quiz(update: Update, context: CallbackContext):
     chat_id = str(update.effective_chat.id)
@@ -1037,8 +996,8 @@ def main():
         allowed_updates=['message', 'callback_query', 'poll_answer']
     )
     # Restore active quizzes
-    logger.info("Restoring active quizzes...")
-    dp.job_queue.run_once(quick_restart_all_quizzes, 1)
+    # logger.info("Restoring active quizzes...")
+    # dp.job_queue.run_once(quick_restart_all_quizzes, 1)
     logger.info("Bot started successfully!")
     updater.idle()
 
