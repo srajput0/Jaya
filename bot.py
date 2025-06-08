@@ -607,59 +607,25 @@ def stop_quiz(update: Update, context: CallbackContext):
 #         )
 
 def set_interval(update: Update, context: CallbackContext):
+    
     """Set quiz interval using command /setinterval <seconds>"""
-    chat_id = str(update.effective_chat.id)
-    
-    # Check if command has an argument
-    if not context.args or not context.args[0].isdigit():
-        update.message.reply_text("Usage: /setinterval <seconds>\nExample: /setinterval 30")
-        return
-        
-    interval = int(context.args[0])
-    
-    # Validate interval
-    if interval < 10:
-        update.message.reply_text("⚠️ Interval must be at least 10 seconds!")
-        return
-    
+    interval = int(query.data.split('_')[1])
     chat_data = load_chat_data(chat_id)
     chat_data["interval"] = interval
     save_chat_data(chat_id, chat_data)
-    
+        
     if chat_data.get("active", False):
-        # Remove existing quiz jobs for this chat
-        jobs = context.job_queue.get_jobs_by_name(str(chat_id))
+        query.edit_message_text(f"Quiz interval updated to {interval} seconds. Applying new interval immediately.")
+        jobs = context.job_queue.jobs()
         for job in jobs:
-            job.schedule_removal()
-            
-        # Send first quiz immediately
+            if job.context and job.context["chat_id"] == chat_id:
+                job.schedule_removal()
+                    
+            # Send the first quiz immediately and then schedule subsequent quizzes
         send_quiz_immediately(context, chat_id)
-        
-        # Schedule new repeating quiz with updated interval
-        context.job_queue.run_repeating(
-            send_quiz,
-            interval=interval,
-            first=interval,
-            context={
-                "chat_id": chat_id,
-                "used_questions": chat_data.get("used_questions", [])
-            },
-            name=str(chat_id)
-        )
-        
-        update.message.reply_text(f"Quiz interval updated to {interval} seconds. Starting quiz.")
-        
-        # Update MongoDB status
-        update_chat_status(chat_id, active=True, interval=interval)
-        
-        # Update queue
-        quiz_queue.add_chat(chat_id, interval, datetime.utcnow())
-    else:
-        update.message.reply_text(
-            f"Quiz interval set to {interval} seconds.\n"
-            f"Use /start to begin the quiz."
-        )
-
+        context.job_queue.run_repeating(send_quiz, interval=interval, first=interval, context={"chat_id": chat_id, "used_questions": chat_data.get("used_questions", [])})
+        query.edit_message_text(f"Quiz interval updated to {interval} seconds. Starting quiz.")
+        start_quiz(update, context)
 
 def restart_active_quizzes(context: CallbackContext):
     """Restart all active quizzes immediately after bot restart"""
