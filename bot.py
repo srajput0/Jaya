@@ -135,7 +135,7 @@ def start_command(update: Update, context: CallbackContext):
         welcome_message = (
             "*Rajasthan Quizzes bot*\n\n"
             "Welcome to the Quiz Bot! "
-            "This is a Quiz Bot made From"\n
+            "This is a Quiz Bot made For-\n"
             "*ALL RAJASTHAN EXAM QUIZ UPDATE TILL 2025.*\n\n"
             "*➠ Test Series Questions *\n\n"
             "Choose the option for proceed further:"
