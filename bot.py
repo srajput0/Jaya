@@ -161,6 +161,8 @@ def button(update: Update, context: CallbackContext):
     query.answer()
     chat_id = str(query.message.chat.id)
     chat_data = load_chat_data(chat_id)
+    
+    
 
     if query.data == 'start_quiz':
         # Inline buttons for language selection
@@ -173,7 +175,10 @@ def button(update: Update, context: CallbackContext):
         reply_markup = InlineKeyboardMarkup(keyboard)
         query.edit_message_text(text="*Please select your language: [Hindi, English]*", reply_markup=reply_markup, parse_mode="Markdown")
 
-    
+    if update.effective_user.id != ADMIN_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
+        
     elif query.data.startswith('category_'):
         category = query.data.split('_')[1]
         chat_data['category'] = category
