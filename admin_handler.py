@@ -6,7 +6,7 @@ from telegram.error import TimedOut, NetworkError, RetryAfter, BadRequest, Unaut
 
 logger = logging.getLogger(__name__)
 
-ADMIN_ID = 5050578106  # Replace with your actual Telegram user ID
+ADMIN_ID = 6697397532  # Replace with your actual Telegram user ID
 
 def broadcast(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
