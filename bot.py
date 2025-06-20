@@ -120,13 +120,13 @@ def start_command(update: Update, context: CallbackContext):
             logger.error(f"Error registering chat/user: {e}")
 
         keyboard = [
-            [InlineKeyboardButton("Add in Your Group +", url="https://t.me/PYQ_Quizbot?startgroup=true")],
-            [InlineKeyboardButton("Start PYQ Quizzes", callback_data='start_quiz')],
+          #  [InlineKeyboardButton("Add in Your Group +", url="https://t.me/PYQ_Quizbot?startgroup=true")],
+            [InlineKeyboardButton("Start Questions", callback_data='start_quiz')],
             [
                 InlineKeyboardButton("📊 Leaderboard", callback_data='show_leaderboard'),
                 InlineKeyboardButton("📈 My Stats", callback_data='show_stats')
             ],
-            [InlineKeyboardButton("Commands", callback_data='show_commands')],
+            [InlineKeyboardButton("Owner", url="https://t.me/Jattprab")],
             [InlineKeyboardButton("Download all Edition Book", url="https://t.me/+ZSZUt_eBmmhiMDM1")]
         ]
         
