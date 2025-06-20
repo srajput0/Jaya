@@ -86,49 +86,6 @@ def error_handler(func):
             return None
     return wrapper
 
-ADMIN_ID = 5050578106  # Replace with your admin Telegram user ID
-SUDO_USERS_FILE = "sudo_users.json"
-
-def load_sudo_users():
-    if os.path.exists(SUDO_USERS_FILE):
-        with open(SUDO_USERS_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
-
-def save_sudo_users(sudo_users):
-    with open(SUDO_USERS_FILE, "w") as f:
-        json.dump(list(sudo_users), f)
-
-# Load SUDO user IDs at startup
-SUDO_USER_IDS = load_sudo_users()
-
-def is_admin_or_sudo(user_id):
-    return user_id == ADMIN_ID or user_id in SUDO_USER_IDS
-
-def addsudo(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        update.message.reply_text("You are not authorized to use this command.")
-        return
-    
-    if not context.args:
-        update.message.reply_text("Usage: /addsudo <user_id>")
-        return
-
-    try:
-        sudo_id = int(context.args[0])
-    except ValueError:
-        update.message.reply_text("Please provide a valid user ID (integer).")
-        return
-
-    if sudo_id in SUDO_USER_IDS:
-        update.message.reply_text(f"{sudo_id} is already a sudo user.")
-        return
-
-    SUDO_USER_IDS.add(sudo_id)
-    save_sudo_users(SUDO_USER_IDS)
-    update.message.reply_text(f"User {sudo_id} has been added as a sudo user.")
-
 
 @error_handler
 def log_user_or_group(update: Update, context: CallbackContext):
@@ -206,8 +163,8 @@ def button(update: Update, context: CallbackContext):
     chat_id = str(query.message.chat.id)
     chat_data = load_chat_data(chat_id)
     
-    if not is_admin_or_sudo(user_id):
-        query.answer(text='You are not authorized to use this feature.', show_alert=True)
+    if update.effective_user.id != ADMIN_ID:
+        update.message.reply_text("You are not authorized to use this command.")
         return
 
     if query.data == 'start_quiz':
@@ -221,9 +178,7 @@ def button(update: Update, context: CallbackContext):
         reply_markup = InlineKeyboardMarkup(keyboard)
         query.edit_message_text(text="*Please select your language: [Hindi, English]*", reply_markup=reply_markup, parse_mode="Markdown")
 
-    if not is_admin_or_sudo(user_id):
-        query.answer(text='You are not authorized to use this feature.', show_alert=True)
-        return
+    
         
     elif query.data.startswith('category_'):
         category = query.data.split('_')[1]
