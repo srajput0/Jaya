@@ -128,16 +128,16 @@ def start_command(update: Update, context: CallbackContext):
            #     InlineKeyboardButton("📈 My Stats", callback_data='show_stats')
            # ],
             [InlineKeyboardButton("Owner", url="https://t.me/Jattprab")],
-            [InlineKeyboardButton("channel", url="https://t.me/+ZSZUt_eBmmhiMDM1")]
+            [InlineKeyboardButton("channel", url="https://t.me/+1XYmxCPpKZwwYWM1")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         welcome_message = (
-            "*Pinnacle 7th Edition*\n\n"
-            "Welcome to the Pinnacle 7th edition Quiz Bot! "
-            "This is a Quiz Bot made by *Pinnacle Publication.*\n\n"
-            "This can ask two Exams PYQ's.\n\n"
-            "*➠ SSC *\n*➠ RRB*\n\n"
+            "*Rajasthan Quizzes bot*\n\n"
+            "Welcome to the Quiz Bot! "
+            "This is a Quiz Bot made From"\n
+            "*ALL RAJASTHAN EXAM QUIZ UPDATE TILL 2025.*\n\n"
+            "*➠ Test Series Questions *\n\n"
             "Choose the option for proceed further:"
         )
         
