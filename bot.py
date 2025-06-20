@@ -123,12 +123,12 @@ def start_command(update: Update, context: CallbackContext):
         keyboard = [
           #  [InlineKeyboardButton("Add in Your Group +", url="https://t.me/PYQ_Quizbot?startgroup=true")],
             [InlineKeyboardButton("Start Questions", callback_data='start_quiz')],
-            [
-                InlineKeyboardButton("📊 Leaderboard", callback_data='show_leaderboard'),
-                InlineKeyboardButton("📈 My Stats", callback_data='show_stats')
-            ],
+           # [
+           #     InlineKeyboardButton("📊 Leaderboard", callback_data='show_leaderboard'),
+           #     InlineKeyboardButton("📈 My Stats", callback_data='show_stats')
+           # ],
             [InlineKeyboardButton("Owner", url="https://t.me/Jattprab")],
-            [InlineKeyboardButton("Download all Edition Book", url="https://t.me/+ZSZUt_eBmmhiMDM1")]
+            [InlineKeyboardButton("channel", url="https://t.me/+ZSZUt_eBmmhiMDM1")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
