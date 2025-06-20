@@ -176,7 +176,7 @@ def button(update: Update, context: CallbackContext):
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        query.edit_message_text(text="*Please select your language: [Hindi, English]*", reply_markup=reply_markup, parse_mode="Markdown")
+        query.edit_message_text(text="*Click For Start*", reply_markup=reply_markup, parse_mode="Markdown")
 
     
         
@@ -199,7 +199,7 @@ def button(update: Update, context: CallbackContext):
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        query.edit_message_text(text=f"Category selected: {category.upper()}\n*Please select the interval for quizzes: using this command /setinterval *\nSet the interval for quizzes - [Ex. /setinterval 20] for set Custom Interval",
+        query.edit_message_text(text=f"Category selected: {category.upper()}\n*Please select the interval for quizzes:  *\nSet the interval for quizzes set Custom Interval",
                                 reply_markup=reply_markup, parse_mode="Markdown")
 
     elif query.data == 'back_to_languages':
