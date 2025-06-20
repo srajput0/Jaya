@@ -166,40 +166,14 @@ def button(update: Update, context: CallbackContext):
         # Inline buttons for language selection
         keyboard = [
             [
-                InlineKeyboardButton("Hindi", callback_data='language_hindi'),
-                InlineKeyboardButton("English", callback_data='language_english')
+                InlineKeyboardButton("Test Series Questions", callback_data='category_SSCHi'),
+                
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         query.edit_message_text(text="*Please select your language: [Hindi, English]*", reply_markup=reply_markup, parse_mode="Markdown")
 
-    elif query.data.startswith('language_'):
-        language = query.data.split('_')[1]
-        chat_data['language'] = language
-        save_chat_data(chat_id, chat_data)
-
-        # Inline buttons for category selection based on the chosen language
-        if language == 'hindi':
-            keyboard = [
-                [
-                    InlineKeyboardButton("SSC", callback_data='category_SSCHi'),
-                    InlineKeyboardButton("RRB", callback_data='category_RRBHi')
-                ],
-                [InlineKeyboardButton("Back", callback_data='back_to_languages')]
-            ]
-        elif language == 'english':
-            keyboard = [
-                [
-                    InlineKeyboardButton("SSC", callback_data='category_SSCEn'),
-                    InlineKeyboardButton("RRB", callback_data='category_RRBEn')
-                ],
-                [InlineKeyboardButton("Back", callback_data='back_to_languages')]
-            ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        query.edit_message_text(text=f"*Language selected: {language.upper()}\nPlease select your category: [SSC, RRB]*",
-                                reply_markup=reply_markup, parse_mode="Markdown")
-
+    
     elif query.data.startswith('category_'):
         category = query.data.split('_')[1]
         chat_data['category'] = category
